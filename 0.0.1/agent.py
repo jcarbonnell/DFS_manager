@@ -1,57 +1,30 @@
-# An AI agent for managing decentralized file storage systems
+# An AI agent for extracting metadata from audio files and upload them on a DFS
+import asyncio
+import requests
 from nearai.agents.environment import Environment
-import json
-import boto3
-from mutagen import File
-
-def extract_metadata(file_path):
-    # Extract metadata from file
-    audio = File(file_path)
-    metadata = {
-        'title': audio.get('title', ['Unknown'])[0],
-        'artist': audio.get('artist', ['Unknown'])[0],
-    }
-    return metadata
-
-def upload_to_s3(file_path, metadata, bucket_name):
-    # Upload file to S3
-    s3 = boto3.client('s3')
-    s3.upload_file(file_path, bucket_name, f"{metadata['artist']}_{metadata['title']}.mp3")
-    return f"https://{bucket_name}.s3.amazonaws.com/{metadata['artist']}_{metadata['title']}.mp3"
 
 def run(env: Environment):
-    # System prompt for context
-    prompt = {"role": "system", "content": "You are a seasoned file manager agent, specialized in decentralized data storage architecture."}
-    
-    # request user input, where users drop files or provide file paths
-    env.request_user_input()
+    prompt = {"role": "system", "content": "Analyse the user input and extract the metadata from the audio file."}
+    result = env.completion([prompt] + env.list_messages())
+    if "Audio file:" not in result:
+        env.add_reply("Provide an audio file.")
+        return
 
-    # assuming the user input is now part of the message list
-    messages = env.list_messages()
+    #last_message = env.get_last_message()
+    #env.add_reply(f"You said: {last_message['content']}")
+    #last_message_text = last_message["content"]
+    #if last_message_text != "Fund Me":
+    #    return
+    # target_account_id = "devbot.near"
 
-    # Check if there's a new message from the user
-    if messages and messages[-1]['role'] == 'user':
-        user_input = messages[-1]['content']
+    faucet_account = env.set_near("dfs_manager.devbot.near", env.env_vars["PRIVATE_ACCESS_KEY"])
+    result = asyncio.run(faucet_account.call("dfs_manager.devbot.near", "fund", args={"account_id": target_account_id}))
 
-        try:
-            metadata = extract_metadata(user_input)
+    env.add_reply(f"You were funded! {result}")
 
-            # use AI for tagging, classifying, and more complex tasks
+try:
+    run(env)
+except Exception as e:
+    env.add_reply(f"Something went wrong: {str(e)}")
 
-            # upload file to S3
-            url = upload_to_s3(user_input, metadata, "1000fans-theosis")
-            # add the result to the conversation
-            env.add_reply(f"File processed and uploaded. URL: {url}. Metadata: {json.dumps(metadata)}")
-        except Exception as e:
-            # If there's an error (e.g., file not found), inform the user with more detailed guidance
-            error_message = f"Error processing file: {str(e)}. Please ensure the file path is correct. Here's how you can proceed:\n- To upload a file, provide the full path like: /path/to/your/file.mp3\n- Type 'help' for more information on using this agent."
-            env.add_reply(error_message)
-
-        # continue the conversation with the AI
-        result = env.completion([prompt] + messages)
-        env.add_reply(result)
-
-        # ask for moe input or end conversation
-        env.request_user_input()
-
-run(env)
+env.request_user_input()

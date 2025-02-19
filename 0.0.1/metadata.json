@@ -1,9 +1,9 @@
 {
   "name": "dfs_manager",
-  "version": "0.0.1",
-  "description": "An AI agent designed for managing decentralized file storage systems, with a focus on IPFS integration. It automates the analysis, tagging, indexing, organization and optimization of file storage, enhances data retrieval efficiency, and ensures privacy and security in a decentralized environment.",
+  "version": "0.0.4",
+  "description": "An AI agent specialized in the management and optimization of decentralized file storage, enhancing data retrieval efficiency, and ensuring privacy and security in a decentralized environment.",
   "category": "agent",
-  "tags": [],
+  "tags": ["audio_analysis", "decentralized_storage", "AI_agent"],
   "details": {
     "agent": {
       "defaults": {
