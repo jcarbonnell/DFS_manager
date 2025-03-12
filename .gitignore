@@ -1,0 +1,18 @@
+# Rust smart contract ignores
+target/
+*.lock
+
+# Python agent ignores
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.db
+
+# NEAR key files
+*.key
+
+# General
+*.log
+*.swp
+.DS_Store

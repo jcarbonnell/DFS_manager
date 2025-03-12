@@ -1,0 +1,23 @@
+{
+  "name": "storage-agent",
+  "version": "0.0.1",
+  "description": "A real-world agent that uploads encrypted files to IPFS and stores CIDs on the NEAR blockchain.",
+  "category": "agent",
+  "tags": ["storage", "ipfs", "near"],
+  "details": {
+    "agent": {
+      "defaults": {
+        "model": "llama-v3p1-70b-instruct",
+        "model_provider": "fireworks",
+        "model_temperature": 1.0,
+        "model_max_tokens": 16384
+      },
+      "env_vars": {
+        "CONTRACT_ID": "1000fans.testnet",
+        "IPFS_API_KEY": "",
+        "GROUP_KEY": ""
+      }
+    }
+  },
+  "show_entry": true
+}
