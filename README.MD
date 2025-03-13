@@ -1,6 +1,6 @@
 # Decentralized File Storage Manager
 
-The Decentralized File Storage Manager (DFS Manager) is an AI Agent built with NEAR AI and integrated with the NEAR Protocol Blockchain, to handle file storage on IPFS. The DFS Manager automates a secure file processing, from the drag-and-drop interface to the final storage and retrieval, including metadata extraction with a team of specialized AI models (e.g. tempo detection for audio files). The DFS Manager optimizes file storage on IPFS for fast retrieval, and enforces a token-based access control. Designed as a standalone assistant, it offers blockchain developers a functional solution to upgrade their apps with a decentralized backend.
+The Decentralized File Storage Manager (DFS Manager) is an AI Agent, built with NEAR AI and integrated with the NEAR Protocol Blockchain, to handle file storage on IPFS. The DFS Manager automates a secure file processing, from the drag-and-drop interface to the final storage and retrieval, including metadata extraction with a team of specialized AI models (e.g. tempo detection for audio files). The DFS Manager optimizes file storage on IPFS for fast retrieval, and enforces a token-based access control. Designed as a standalone assistant, it offers blockchain developers a functional solution to upgrade their apps with a decentralized backend.
 
 The DFS Manager aims to:
 - **Replace centralized storage** (such as AWS S3 or Google Firebase) with the decentralized storage network IPFS.
@@ -12,9 +12,9 @@ The DFS Manager aims to:
 Inspired by *"A Secure File Sharing System Based on IPFS and Blockchain"* (2022) [5], the DFS Manager adapts a group-based model, replacing the proposed IPFS proxy with NEAR smart contracts and adding a team of AI agents in charge for the most efficient file uploading.
 
 ### System Entities
-- **Owners**: NEAR account holders who create content groups and upload files. 
+- **Owner**: NEAR account holders who create content groups and upload files. 
 - **Users**: Token holders authorized to access group-specific files.
-- **NEAR Smart Contract**: Manages group keys, access control, and metadata (IPFS CIDs, file hashes).
+- **Smart Contract**: Manages group keys, access control, and metadata (IPFS CIDs, file hashes).
 - **NEAR Blockchain**: Logs transactions and enforces access.
 - **IPFS**: Stores encrypted files, pinned for availability.
 - **AI Agents**: A team of specialized agents working together:
@@ -27,8 +27,8 @@ Inspired by *"A Secure File Sharing System Based on IPFS and Blockchain"* (2022)
 - ~~Set up Near AI & Cargo Near~~.
 - ~~Set up IPFS & Pinata~~.
 - ~~Create & Deploy a minimal smart contract to testnet~~.
-- Create & Deploy a minimal Storage Agent on NEAR AI registry.
-- ~~Test file Upload to IPFS with 1. NEAR CLI~~, 2. AI Agent, 3. Smart Contract.
+- ~~Create & Deploy a minimal Storage Agent on NEAR AI registry~~.
+- Test file Upload to IPFS with ~~1. NEAR CLI~~, 2. AI Agent, 3. Token-Gate Contract.
 - Grow the team of AI Agents and the smart contract with more features.
 
 -----------------------------------------------------
