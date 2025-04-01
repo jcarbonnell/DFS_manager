@@ -4,10 +4,8 @@ The Decentralized File Storage Manager (DFS Manager) is a team of AI Agents, bui
 
 ![DFS Manager architecture](DFS_manager.jpg)
 
-```
-**Why Decentralized Storage ?**
-Centralized storages struggle with single points of failure and scalability, while content-addressed, peer-to-peer file systems enhanced by blockchain enhances security and access control. Using a team of AI agents to handle the technicity of Decentralized Storage Networks make it easy and accessible to everyone.
-```
+> **Why Decentralized Storage ?**
+> Centralized storages struggle with single points of failure and scalability, while content-addressed, peer-to-peer file systems enhanced by blockchain offer security and access control. Using a team of AI agents to handle the technicity of Decentralized Storage Networks make it easy and accessible to everyone.
 
 ### Architecture
 Inspired by [A Secure File Sharing System Based on IPFS and Blockchain](https://www.researchgate.net/publication/360383364_A_Secure_File_Sharing_System_Based_on_IPFS_and_Blockchain) (2022), the DFS Manager adopts a group-based model, where NEAR Protocol smart contracts are used for access control and transaction recording, while various Hugging Face-hosted AI models are called on-demand to process file analysis and metadata extraction.
