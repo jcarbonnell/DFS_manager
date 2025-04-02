@@ -4,10 +4,102 @@ The Decentralized File Storage Manager (DFS Manager) is a team of AI Agents, bui
 
 > **Why Decentralized Storage ?** Centralized storage struggles with single points of failure and scalability, while content-addressed, peer-to-peer file systems enhanced by blockchain offer security and access control. Using a team of AI agents to handle the technicity of Decentralized Storage Networks makes it easy and accessible to everyone.
 
-![DFS Manager architecture](DFS_manager.jpg)
+![DFS Manager](DFS_manager.jpg)
 
 ### Architecture
 Inspired by [A Secure File Sharing System Based on IPFS and Blockchain](https://www.researchgate.net/publication/360383364_A_Secure_File_Sharing_System_Based_on_IPFS_and_Blockchain) (2022), the DFS Manager adopts a group-based model, where NEAR Protocol smart contracts are used for access control and transaction recording, while various Hugging Face-hosted AI models are called on-demand to process file analysis and metadata extraction.
+
+**Organizational chart and data flow**
+```
++-----------------------------------------------------+
+| Owner (NEAR Account: e.g., theosis.1000fans.xyz)    |
+| - Deploys Smart Contract                            |
+| - Uploads content via Manager Agent                |
+| - Manages group membership                         |
++-----------------------------------------------------+
+          | (1) Deploys contract, registers group
+          | (2) Initiates file upload via chat
+          v
++-----------------------------------------------------+
+| Smart Contract (DFS_manager)                        |
+| - Stores: group_keys, group_members, transactions   |
+| - Enforces: token-based access control             |
+| - Methods: register_group, record_transaction,     |
+|            add/remove_group_member, get_group_key  |
++-----------------------------------------------------+
+          | (3) Records metadata (trans_id, IPFS CID)
+          | (4) Verifies token ownership for key access
+          v
++-----------------------------------------------------+
+| NEAR Blockchain                                     |
+| - Logs: contract state changes (via logs)          |
+| - Tracks: token ownership (via 1000fans contract)  |
+| - Ensures: integrity of transactions              |
++-----------------------------------------------------+
+          | (5) Provides token ownership data
+          | (6) Stores contract state
+          v
++-----------------------------------------------------+
+| Users (Token Holders: e.g., fan1.testnet)           |
+| - Owns: 1000fans tokens                            |
+| - Requests: group keys and file access via chat    |
++-----------------------------------------------------+
+          | (7) Chats with Manager Agent
+          v
++-----------------------------------------------------+
+| AI Agents (Team coordinated by Manager Agent)       |
+| +-------------------+                              |
+| | Manager Agent     |                              |
+| | - Chats with users| (8) Routes tasks            |
+| | - Routes tasks    |------------------>           |
+| +-------------------+                              |
+|         | (9) Delegates upload                    |
+|         v                                          |
+| +-------------------+                              |
+| | Upload Agent      |                              |
+| | - Receives files  | (10) Delegates extraction   |
+| | - Delegates tasks |------------------>           |
+| +-------------------+                              |
+|         | (11) Extracts features                  |
+|         v                                          |
+| +-------------------+                              |
+| | Feature Extraction Agents                        |
+| | - Tempo Detection |                              |
+| | - Genre Detection | (12) Returns metadata       |
+| | - etc.            |<-------------------          |
+| +-------------------+                              |
+|         | (13) Passes encrypted files & metadata   |
+|         v                                          |
+| +-------------------+                              |
+| | Storage Agent     |                              |
+| | - Encrypts files  | (14) Pins to IPFS            |
+| | - Pins to IPFS    |------------------>           |
+| | - Updates metadata|------------------>           |
+| +-------------------+                              |
+|         | (15) Updates blockchain                 |
+|         v                                          |
+| +-------------------+                              |
+| | Blockchain Tracking Agent                        |
+| | - Calls Smart Contract                           |
+| | - Records transactions                           |
+| +-------------------+                              |
++-----------------------------------------------------+
+          | (16) Stores encrypted files
+          | (17) Returns IPFS CID
+          v
++-----------------------------------------------------+
+| IPFS                                                |
+| - Stores: encrypted files                          |
+| - Provides: content-addressed access (CIDs)        |
++-----------------------------------------------------+
+          | (18) Retrieves encrypted files
+          v
++-----------------------------------------------------+
+| Users (Token Holders)                               |
+| - Decrypts files with group key                    |
+| - Accesses content                                 |
++-----------------------------------------------------+
+```
 
 ### System Entities
 - **Owner**: NEAR accounts holding a dApp or content data to provide access to. 
