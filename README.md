@@ -121,8 +121,8 @@ Inspired by [A Secure File Sharing System Based on IPFS and Blockchain](https://
 ### Next Steps:
 - ~~Set up Near AI & Cargo Near~~.
 - ~~Set up IPFS & Pinata~~.
-- Create & Deploy a minimal smart contract to testnet.
-- ~~Create & Deploy a minimal Storage Agent on NEAR AI registry~~.
+- ~~Create & Deploy a minimal smart contract to mainnet~~.
+- Create & Deploy a minimal Storage Agent on NEAR AI registry.
 - Test file Upload to IPFS with ~~1. NEAR CLI~~, 2. AI Agent, 3. Token-Gate Contract.
 - Grow the team of AI Agents and the smart contract with more features.
 
