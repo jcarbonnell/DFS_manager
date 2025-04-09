@@ -1,9 +1,9 @@
 {
   "name": "storage-agent",
-  "version": "0.0.4",
-  "description": "A real-world agent that uploads encrypted files to IPFS and stores CIDs on the NEAR blockchain.",
+  "version": "0.0.8",
+  "description": "A real-world agent that encrypts an embedded .mp3 file, uploads to IPFS and stores CIDs on the NEAR blockchain.",
   "category": "agent",
-  "tags": ["storage", "ipfs", "near"],
+  "tags": ["storage", "ipfs", "near", "encryption", "mp3"],
   "details": {
     "agent": {
       "defaults": {
@@ -13,11 +13,12 @@
         "model_max_tokens": 16384
       },
       "env_vars": {
-        "CONTRACT_ID": "dfs-manager.testnet",
-        "NFT_CONTRACT_ID": "1000fans.testnet",
+        "CONTRACT_ID": "devbot.near",
         "IPFS_API_KEY": "",
         "IPFS_API_SECRET": "",
-        "GROUP_KEY": ""
+        "GROUP_KEY": "",
+        "NEAR_PRIVATE_KEY": "",
+        "GROUP_ID": "theosis"
       }
     }
   },
