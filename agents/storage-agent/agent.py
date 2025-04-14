@@ -1,4 +1,4 @@
-# a storage agent part of the DFS manager
+# a storage agent part of the DFS manager team of agents
 from nearai.agents.environment import Environment
 import os
 import requests

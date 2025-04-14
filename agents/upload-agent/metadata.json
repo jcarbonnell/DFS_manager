@@ -1,9 +1,9 @@
 {
   "name": "upload-agent",
-  "version": "0.0.1",
-  "description": "Collects .mp3 files, extracts metadata, and passes them to storage-agent.",
+  "version": "0.0.10",
+  "description": "Loads embedded test.mp3 and passes it to storage-agent after confirmation.",
   "category": "agent",
-  "tags": [],
+  "tags": ["upload", "ipfs", "near", "mp3"],
   "details": {
     "agent": {
       "defaults": {
@@ -11,6 +11,10 @@
         "model_provider": "fireworks",
         "model_temperature": 1.0,
         "model_max_tokens": 16384
+      },
+      "env_vars": {
+        "CONTRACT_ID": "devbot.near",
+        "GROUP_ID": "theosis"
       }
     }
   },
