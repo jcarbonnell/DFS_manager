@@ -1,9 +1,9 @@
 {
   "name": "storage-agent",
-  "version": "0.0.22",
-  "description": "Uploads .wav files from upload-agent to IPFS and stores CIDs on the NEAR blockchain.",
+  "version": "0.0.23",
+  "description": "Uploads audio files from upload-agent to IPFS and stores CIDs on the NEAR blockchain.",
   "category": "agent",
-  "tags": ["storage", "ipfs", "near", "encryption", "mp3"],
+  "tags": ["storage", "ipfs", "near", "mp3"],
   "details": {
     "agent": {
       "defaults": {

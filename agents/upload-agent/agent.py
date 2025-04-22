@@ -95,7 +95,7 @@ def run(env: Environment):
         env.add_system_log("Attempting to invoke storage-agent")
         try:
             storage_agent_id = "devbot.near/storage-agent/latest"
-            query = f"process file {filename}"
+            query = "process file"
             thread_mode = "FORK"
             result = env.run_agent(storage_agent_id, query=query, thread_mode=thread_mode)
             env.add_system_log(f"Storage-agent invoked successfully, thread ID: {result}")

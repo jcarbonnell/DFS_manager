@@ -1,0 +1,10 @@
+[
+    {
+      "agent_id": "devbot.near/upload-agent/latest",
+      "description": "Collects .wav files from users, verifies them, and prepares for storage by passing to other agents."
+    },
+    {
+      "agent_id": "devbot.near/storage-agent/latest",
+      "description": "Stores .wav files on IPFS via Pinata, records content identifiers (CIDs) and file hashes on the NEAR blockchain."
+    }
+  ]

@@ -27,16 +27,27 @@ def run(env: Environment):
     env.env_vars["DEBUG"] = "true"
     env.add_system_log("Storage-agent started")
 
-    # Get file from thread (passed by upload-agent)
+    # Check messages
+    messages = env.list_messages()
+    env.add_system_log(f"Messages: {messages}")
+    if not messages or "process file" not in messages[-1]["content"].lower():
+        env.add_system_log("No 'process file' command: prompting user")
+        env.add_reply("Type 'process file' to store the .mp3 file.")
+        env.request_user_input()
+        return
+
+    # Get file from thread (passed by upload-agent or uploaded manually)
     files = env.list_files_from_thread()
     env.add_system_log(f"Files in thread: {files}")
     if not files:
         env.add_reply("No file found in thread.")
+        env.request_user_input()
         return
 
     file_obj = files[0]
-    if not file_obj.filename.lower().endswith(".wav"):
-        env.add_reply("File must be an .wav.")
+    if not file_obj.filename.lower().endswith(".mp3"):
+        env.add_reply("File must be an .mp3.")
+        env.request_user_input()
         return
 
     env.add_system_log(f"Processing file: {file_obj.filename}")
@@ -53,6 +64,7 @@ def run(env: Environment):
         env.add_system_log(f"IPFS CID: {ipfs_hash}")
     except Exception as e:
         env.add_reply(f"IPFS upload failed: {str(e)}")
+        env.request_user_input()
         return
 
     # NEAR setup
@@ -60,12 +72,14 @@ def run(env: Environment):
     private_key = env.env_vars.get("NEAR_PRIVATE_KEY")
     if not private_key:
         env.add_reply("Missing NEAR_PRIVATE_KEY")
+        env.request_user_input()
         return
     try:
         near = env.set_near(user_id, private_key)
         env.add_system_log(f"NEAR initialized: {user_id}")
     except Exception as e:
         env.add_reply(f"NEAR setup failed: {str(e)}")
+        env.request_user_input()
         return
 
     # record transaction on NEAR
@@ -99,5 +113,6 @@ def run(env: Environment):
             env.add_reply(f"Transaction failed: {result}")
     except Exception as e:
         env.add_reply(f"NEAR call failed: {str(e)}")
+    env.request_user_input()
 
 run(env)
