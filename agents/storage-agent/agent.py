@@ -1,8 +1,7 @@
 # a storage agent part of the DFS manager team of agents
 from nearai.agents.environment import Environment
-import os
-import requests
 import hashlib
+import requests
 import asyncio
 
 def upload_to_ipfs(file_data, filename, env):
@@ -24,41 +23,31 @@ def upload_to_ipfs(file_data, filename, env):
         env.add_system_log(f"IPFS error: {str(e)}")
         raise
 
-def get_file_from_directory(env, directory=".", extension=".mp3"):
-    """Find the first .mp3 file in the agent's directory."""
-    for file in os.listdir(directory):
-        if file.lower().endswith(extension):
-            file_path = os.path.join(directory, file)
-            try:
-                with open(file_path, "rb") as f:
-                    file_data = f.read()
-                env.add_system_log(f"Loaded {file}")
-                return file, file_data
-            except Exception as e:
-                env.add_reply(f"Failed to load {file}: {str(e)}")
-                return None, None
-    env.add_reply(f"No {extension} file found.")
-    return None, None
-
 def run(env: Environment):
     env.env_vars["DEBUG"] = "true"
-    env.add_system_log("Agent started")
+    env.add_system_log("Storage-agent started")
 
-    messages = env.list_messages()
-    env.add_system_log(f"Messages: {messages}")
-    if not messages or "process file" not in messages[-1]["content"].lower():
-        env.add_reply("Type 'process file' to start.")
-        env.request_user_input()
+    # Get file from thread (passed by upload-agent)
+    files = env.list_files_from_thread()
+    env.add_system_log(f"Files in thread: {files}")
+    if not files:
+        env.add_reply("No file found in thread.")
         return
 
-    filename, file_data = get_file_from_directory(env)
-    if not filename or not file_data:
-        env.add_reply("No file loaded.")
+    file_obj = files[0]
+    if not file_obj.filename.lower().endswith(".wav"):
+        env.add_reply("File must be an .wav.")
         return
 
+    env.add_system_log(f"Processing file: {file_obj.filename}")
+    file_data = env.read_file(file_obj.filename)
+    filename = file_obj.filename
+
+    # Calculate file hash
     file_hash = hashlib.sha256(file_data).hexdigest()
     env.add_system_log(f"File hash: {file_hash}")
 
+    # Upload to IPFS
     try:
         ipfs_hash = upload_to_ipfs(file_data, filename, env)
         env.add_system_log(f"IPFS CID: {ipfs_hash}")
@@ -66,6 +55,7 @@ def run(env: Environment):
         env.add_reply(f"IPFS upload failed: {str(e)}")
         return
 
+    # NEAR setup
     user_id = env.signer_account_id or "devbot.near"
     private_key = env.env_vars.get("NEAR_PRIVATE_KEY")
     if not private_key:
@@ -78,6 +68,7 @@ def run(env: Environment):
         env.add_reply(f"NEAR setup failed: {str(e)}")
         return
 
+    # record transaction on NEAR
     group_id = env.env_vars.get("GROUP_ID", "theosis")
     args = {
         "group_id": group_id,

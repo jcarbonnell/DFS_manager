@@ -1,7 +1,7 @@
 {
   "name": "storage-agent",
-  "version": "0.0.21",
-  "description": "A real-world agent that encrypts an embedded .mp3 file, uploads to IPFS and stores CIDs on the NEAR blockchain.",
+  "version": "0.0.22",
+  "description": "Uploads .wav files from upload-agent to IPFS and stores CIDs on the NEAR blockchain.",
   "category": "agent",
   "tags": ["storage", "ipfs", "near", "encryption", "mp3"],
   "details": {
