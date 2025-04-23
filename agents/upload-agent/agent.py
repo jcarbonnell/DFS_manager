@@ -13,7 +13,7 @@ def get_file_from_directory(env, directory=".", extension=".mp3"):
             if file.lower().endswith(extension):
                 file_path = os.path.join(directory, file)
                 env.add_system_log(f"get_file_from_directory: found {file_path}")
-                return file, None  # Return filename only, no data
+                return file, file_path
         env.add_system_log(f"get_file_from_directory: no {extension} file found")
         env.add_reply(f"No {extension} file found in agent folder.")
         return None, None
@@ -37,25 +37,37 @@ def run(env: Environment):
         return
 
     last_message = messages[-1]["content"].strip().lower()
-    env.add_system_log(f"Processing last message: '{last_message}'")
+    env.add_system_log(f"Processing last_message: '{last_message}'")
 
     # Handle "upload file"
     if last_message == "upload file":
         env.add_system_log("Received 'upload file': verifying file")
-        directories = [
-            ".",  # Current working directory
-            os.path.dirname(__file__),  # Script directory
-            "/app"  # Common Hub runtime root
-        ]
-        filename, _ = None, None
+        directories = [".", os.path.dirname(__file__), "/app"]
+        filename, file_path = None, None
         for directory in directories:
             env.add_system_log(f"Trying directory: {directory}")
-            filename, _ = get_file_from_directory(env, directory)
+            filename, file_path = get_file_from_directory(env, directory)
             if filename:
+                # Copy registry file to thread
+                try:
+                    with open(file_path, "rb") as f:
+                        file_data = f.read()
+                    env.write_file(filename, file_data)
+                    env.add_system_log(f"Copied {filename} to thread, size: {len(file_data)} bytes")
+                    # Verify thread file
+                    thread_files = env.list_files_from_thread()
+                    env.add_system_log(f"Thread files after copy: {thread_files}")
+                    if not any(f.filename == filename for f in thread_files):
+                        raise Exception("File not found in thread after copy")
+                except Exception as e:
+                    env.add_system_log(f"Failed to copy file to thread: {str(e)}")
+                    env.add_reply(f"Error copying file to thread: {str(e)}")
+                    env.request_user_input()
+                    return
                 break
         if not filename:
             env.add_system_log("File verification failed")
-            env.add_reply("No .mp3 file found. Type 'upload file' to start.")
+            env.add_reply("No .mp3 file found in agent folder.")
             env.request_user_input()
             return
 
@@ -95,7 +107,7 @@ def run(env: Environment):
         env.add_system_log("Attempting to invoke storage-agent")
         try:
             storage_agent_id = "devbot.near/storage-agent/latest"
-            query = "process file"
+            query = f"process file {filename}"
             thread_mode = "FORK"
             result = env.run_agent(storage_agent_id, query=query, thread_mode=thread_mode)
             env.add_system_log(f"Storage-agent invoked successfully, thread ID: {result}")

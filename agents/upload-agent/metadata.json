@@ -1,6 +1,6 @@
 {
   "name": "upload-agent",
-  "version": "0.0.14",
+  "version": "0.0.18",
   "description": "Verifies embedded test.mp3 and passes it to storage-agent after user confirmation.",
   "category": "agent",
   "tags": ["upload", "ipfs", "near", "mp3"],

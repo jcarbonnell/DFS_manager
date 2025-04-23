@@ -3,6 +3,25 @@ from nearai.agents.environment import Environment
 import hashlib
 import requests
 import asyncio
+import os
+
+def get_file_from_directory(env, directory=".", extension=".mp3"):
+    """Fallback: Verify the first .mp3 file in the registry."""
+    env.add_system_log(f"get_file_from_directory: starting in {directory}")
+    try:
+        files = os.listdir(directory)
+        env.add_system_log(f"get_file_from_directory: found files {files}")
+        for file in files:
+            env.add_system_log(f"get_file_from_directory: checking file {file}")
+            if file.lower().endswith(extension):
+                file_path = os.path.join(directory, file)
+                env.add_system_log(f"get_file_from_directory: found {file_path}")
+                return file, file_path
+        env.add_system_log(f"get_file_from_directory: no {extension} file found")
+        return None, None
+    except Exception as e:
+        env.add_system_log(f"get_file_from_directory: error - {str(e)}")
+        return None, None
 
 def upload_to_ipfs(file_data, filename, env):
     """Upload file to IPFS via Pinata."""
@@ -30,29 +49,62 @@ def run(env: Environment):
     # Check messages
     messages = env.list_messages()
     env.add_system_log(f"Messages: {messages}")
-    if not messages or "process file" not in messages[-1]["content"].lower():
-        env.add_system_log("No 'process file' command: prompting user")
-        env.add_reply("Type 'process file' to store the .mp3 file.")
-        env.request_user_input()
-        return
 
-    # Get file from thread (passed by upload-agent or uploaded manually)
+    # Get query
+    query = messages[-1]["content"].strip().lower() if messages else ""
+    env.add_system_log(f"Query: {query}")
+
+    # Get file from thread
     files = env.list_files_from_thread()
     env.add_system_log(f"Files in thread: {files}")
-    if not files:
-        env.add_reply("No file found in thread.")
-        env.request_user_input()
-        return
 
-    file_obj = files[0]
-    if not file_obj.filename.lower().endswith(".mp3"):
-        env.add_reply("File must be an .mp3.")
-        env.request_user_input()
-        return
+    # Use filename from query if provided
+    filename = None
+    if "process file" in query:
+        parts = query.split("process file")
+        if len(parts) > 1 and parts[1].strip():
+            filename = parts[1].strip()
+            env.add_system_log(f"Filename from query: {filename}")
 
-    env.add_system_log(f"Processing file: {file_obj.filename}")
-    file_data = env.read_file(file_obj.filename)
-    filename = file_obj.filename
+    # Select file
+    file_data = None
+    if files:
+        file_obj = next((f for f in files if f.filename == filename), files[0])
+        if not file_obj.filename.lower().endswith(".mp3"):
+            env.add_reply("File must be an .mp3.")
+            env.request_user_input()
+            return
+        filename = file_obj.filename
+        env.add_system_log(f"Processing thread file: {filename}")
+        try:
+            file_data = env.read_file(filename)
+            env.add_system_log(f"File read successfully: {filename}, size: {len(file_data)} bytes")
+        except Exception as e:
+            env.add_system_log(f"Error reading thread file: {str(e)}")
+            env.add_reply(f"Failed to read thread file: {str(e)}")
+            env.request_user_input()
+            return
+    else:
+        env.add_system_log("No files in thread, falling back to registry")
+        # Fallback to registry
+        directories = [".", os.path.dirname(__file__), "/app"]
+        for directory in directories:
+            filename, file_path = get_file_from_directory(env, directory)
+            if filename:
+                try:
+                    with open(file_path, "rb") as f:
+                        file_data = f.read()
+                    env.add_system_log(f"Read registry file: {filename}, size: {len(file_data)} bytes")
+                    break
+                except Exception as e:
+                    env.add_system_log(f"Error reading registry file: {str(e)}")
+                    env.add_reply(f"Failed to read registry file: {str(e)}")
+                    env.request_user_input()
+                    return
+        if not file_data:
+            env.add_reply("No .mp3 file found in thread or registry.")
+            env.request_user_input()
+            return
 
     # Calculate file hash
     file_hash = hashlib.sha256(file_data).hexdigest()
@@ -82,7 +134,7 @@ def run(env: Environment):
         env.request_user_input()
         return
 
-    # record transaction on NEAR
+    # Record transaction on NEAR
     group_id = env.env_vars.get("GROUP_ID", "theosis")
     args = {
         "group_id": group_id,
@@ -91,7 +143,6 @@ def run(env: Environment):
         "ipfs_hash": ipfs_hash
     }
     try:
-        # Call NEAR synchronously, handle coroutine if returned
         result = near.call(
             contract_id=env.env_vars["CONTRACT_ID"],
             method_name="record_transaction",
@@ -102,7 +153,6 @@ def run(env: Environment):
         env.add_system_log(f"NEAR raw result type: {type(result)}")
         env.add_system_log(f"NEAR raw result: {result}")
         if asyncio.iscoroutine(result):
-            # Run in current event loop if possible
             loop = asyncio.get_event_loop()
             result = loop.run_until_complete(result)
             env.add_system_log(f"NEAR resolved result: {result}")

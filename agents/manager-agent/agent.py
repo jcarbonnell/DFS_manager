@@ -1,8 +1,9 @@
+# a manager agent part of the DFS manager team of agents
 from nearai.agents.environment import Environment
 import json
 
 MODEL = "llama-v3p1-70b-instruct"
-VECTOR_STORE_ID = ""
+VECTOR_STORE_ID = "vs_e39c890ecfd04394a35406ce"
 
 def run(env: Environment):
     env.env_vars["DEBUG"] = "true"
@@ -11,7 +12,7 @@ def run(env: Environment):
     # Get user query
     messages = env.list_messages()
     if not messages:
-        env.add_reply("Hello! I can help you upload or store audio files. What would you like to do? (e.g., 'upload a file', 'store a file')")
+        env.add_reply("Hello! I can help you upload or store audio files. Please upload an .mp3 file to this thread, then say 'upload a file' or 'store a file'.")
         env.request_user_input()
         return
 
@@ -20,20 +21,23 @@ def run(env: Environment):
 
     # Query vector store for agent routing
     try:
+        env.add_system_log(f"Querying vector store with ID: {VECTOR_STORE_ID}")
         vector_results = env.query_vector_store(VECTOR_STORE_ID, user_query)
+        env.add_system_log(f"Vector store results: {vector_results}")
         if not vector_results:
-            env.add_reply("Sorry, I didn't understand your request. Try saying 'upload a file' or 'store a file'.")
+            env.add_reply("Manager: Sorry, I didn't understand your request. Try saying 'upload a file' or 'store a file'.")
             env.request_user_input()
             return
 
         # Parse top result
         top_result = vector_results[0]["chunk_text"]
+        env.add_system_log(f"Top result: {top_result}")
         agent_data = json.loads(top_result)
         target_agent = agent_data["agent_id"]
         env.add_system_log(f"Routing to agent: {target_agent}")
     except Exception as e:
         env.add_system_log(f"Vector store query failed: {str(e)}")
-        env.add_reply("Error processing your request. Please try again.")
+        env.add_reply("Manager: Error processing your request: {str(e)}. Please try again.")
         env.request_user_input()
         return
 
@@ -45,10 +49,10 @@ def run(env: Environment):
     try:
         result = env.run_agent(target_agent, query=query, thread_mode="FORK")
         env.add_system_log(f"Agent {target_agent} invoked, thread ID: {result}")
-        env.add_reply(f"Your request has been sent to the appropriate agent. Thread: {result}")
+        env.add_reply(f"Manager: Your request has been sent to {target_agent.split('/')[-2]}. Check thread {result} for next steps.")
     except Exception as e:
         env.add_system_log(f"Agent invocation failed: {str(e)}")
-        env.add_reply(f"Failed to process your request: {str(e)}")
+        env.add_reply(f"Manager: Failed to process your request: {str(e)}")
         env.request_user_input()
 
 run(env)
