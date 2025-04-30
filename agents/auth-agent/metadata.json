@@ -13,9 +13,10 @@
         "model_max_tokens": 16384
       },
       "env_vars": {
+        "CONTRACT_ID": "devbot.near",
         "NFT_CONTRACT_ID": "1000fans.testnet",
         "GROUP_ID": "theosis",
-        "ADMIN_ACCOUNT_ID": "",
+        "ADMIN_ACCOUNT_ID": "1000fans.testnet",
         "ADMIN_PRIVATE_KEY": ""
       }
     }

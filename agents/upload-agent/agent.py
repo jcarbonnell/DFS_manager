@@ -1,9 +1,8 @@
 # an upload agent part of the DFS manager team of agents
 from nearai.agents.environment import Environment
 import os
-import asyncio
 
-def get_file_from_directory(env, directory=".", extension=".mp3"):
+def get_file_from_directory(env, directory=".", extension=[".mp3", ".mp4"]):
     """Verify the first .mp3 file in the agent's directory without reading it."""
     env.add_system_log(f"get_file_from_directory: starting in {directory}")
     try:

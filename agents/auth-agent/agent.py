@@ -6,15 +6,32 @@ from base58 import b58encode
 import json
 
 async def create_wallet(env):
-    """Generate a new NEAR wallet and create an account on testnet."""
+    """Generate a new NEAR wallet and create a sub-account on testnet matching the minted token ID."""
     try:
         # Generate key pair
         key_pair = KeyPair.generate_random_key_pair()
         public_key = key_pair.public_key
         private_key = key_pair.secret_key
-        account_id = f"fans-{b58encode(public_key).decode('utf-8')[:12]}.testnet"
 
-        # Use admin account to create new account
+        # mint token via nft-agent
+        nft_agent_id = "devbot.near/nft-agent/latest"
+        mint_query = "mint token"
+        mint_result = await env.run_agent(nft_agent_id, query=mint_query, thread_mode="FORK")
+        env.add_system_log(f"NFT-agent invoked for mint, thread ID: {mint_result}")
+
+        # Fetch token_id from auth_status.json (updated by nft-agent)
+        files = env.list_files_from_thread()
+        auth_file = next((f for f in files if f.filename == "auth_status.json"), None)
+        if not auth_file:
+            raise Exception("No auth_status.json found after minting")
+
+        auth_data = json.loads(env.read_file(auth_file.filename).decode())
+        token_id = auth_data.get("token_id")
+        if not token_id:
+            raise Exception("No token_id found after minting")
+
+        # Create sub-account with token_id
+        account_id = f"{token_id}.1000fans.testnet"
         admin_account_id = env.env_vars.get("ADMIN_ACCOUNT_ID")
         admin_private_key = env.env_vars.get("ADMIN_PRIVATE_KEY")
         if not (admin_account_id and admin_private_key):
@@ -38,7 +55,8 @@ async def create_wallet(env):
         credentials = {
             "account_id": account_id,
             "public_key": public_key,
-            "private_key": private_key
+            "private_key": private_key,
+            "token_id": token_id
         }
         env.write_file("wallet_credentials.json", json.dumps(credentials).encode())
         env.add_reply(f"Wallet created successfully! Account ID: {account_id}. Credentials saved in thread.")

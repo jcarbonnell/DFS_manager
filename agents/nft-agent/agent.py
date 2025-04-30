@@ -5,9 +5,9 @@ import json
 async def mint_token(env, user_id):
     """Mint an NFT on 1000fans.testnet."""
     try:
-        private_key = env.env_vars.get("ADMIN_PRIVATE_KEY")
+        private_key = env.env_vars.get("NEAR_PRIVATE_KEY") # user's key from login
         if not private_key:
-            raise Exception("Missing ADMIN_PRIVATE_KEY")
+            raise Exception("Missing NEAR_PRIVATE_KEY")
 
         near = env.set_near(user_id, private_key, rpc_addr="https://rpc.testnet.near.org")
         token_metadata = {
@@ -15,6 +15,7 @@ async def mint_token(env, user_id):
             "description": "Grants access to 1000fans platform",
             "copies": 1
         }
+        MINT_STORAGE_COST = 6370000000000000000000 # 0.00637 NEAR
         result = await near.call(
             contract_id="1000fans.testnet",
             method_name="nft_mint",
@@ -23,12 +24,13 @@ async def mint_token(env, user_id):
                 "token_metadata": token_metadata
             },
             gas=30000000000000,
-            amount=6370000000000000000000,  # 0.00637 NEAR
+            amount=MINT_STORAGE_COST,
             max_retries=3
         )
         env.add_system_log(f"Mint result: {result}")
         if "SuccessValue" in result.status:
-            token_id = result.result["token_id"]
+            token = result.result  # Token object
+            token_id = token["token_id"]
             env.add_reply(f"Token {token_id} minted for {user_id}.")
             return token_id
         raise Exception("Minting failed")
