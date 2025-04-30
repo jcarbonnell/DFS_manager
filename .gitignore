@@ -16,3 +16,7 @@ __pycache__/
 *.log
 *.swp
 .DS_Store
+
+# virtual env
+venv/
+venv311/
