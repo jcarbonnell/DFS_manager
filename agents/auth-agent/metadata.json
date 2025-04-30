@@ -1,9 +1,9 @@
 {
   "name": "auth-agent",
-  "version": "0.0.2",
-  "description": "Verifies NEAR wallet connection and token ownership for DFS Manager access.",
+  "version": "0.0.4",
+  "description": "Creates NEAR wallets on testnet, verifies wallet connection, and checks token ownership on 1000fans.testnet.",
   "category": "agent",
-  "tags": ["auth", "near", "token", "access"],
+  "tags": ["auth", "near", "token", "wallet", "access"],
   "details": {
     "agent": {
       "defaults": {
@@ -13,9 +13,10 @@
         "model_max_tokens": 16384
       },
       "env_vars": {
-        "CONTRACT_ID": "devbot.near",
         "NFT_CONTRACT_ID": "1000fans.testnet",
-        "GROUP_ID": "theosis"
+        "GROUP_ID": "theosis",
+        "ADMIN_ACCOUNT_ID": "",
+        "ADMIN_PRIVATE_KEY": ""
       }
     }
   },

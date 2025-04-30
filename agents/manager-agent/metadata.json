@@ -1,9 +1,9 @@
 {
   "name": "manager-agent",
-  "version": "0.0.5",
-  "description": "Interacts with users and routes tasks into the DFS Manager team of agents using vector stores.",
+  "version": "0.0.7",
+  "description": "Interacts with users, verifies authorization, and routes tasks into the DFS Manager team of agents using vector stores.",
   "category": "agent",
-  "tags": ["manager", "routing", "near", "ipfs", "mp3"],
+  "tags": ["manager", "routing", "near", "ipfs", "mp3", "auth"],
   "details": {
     "agent": {
       "defaults": {
@@ -15,7 +15,7 @@
       "env_vars": {
         "CONTRACT_ID": "devbot.near",
         "GROUP_ID": "theosis",
-        "VECTOR_STORE_ID": "vs_e39c890ecfd04394a35406ce"
+        "VECTOR_STORE_ID": "vs_9a5a801af080432d8413dc91"
       }
     }
   },

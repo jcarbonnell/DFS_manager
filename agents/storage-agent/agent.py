@@ -127,7 +127,7 @@ def run(env: Environment):
         env.request_user_input()
         return
     try:
-        near = env.set_near(user_id, private_key)
+        near = env.set_near(user_id, private_key, rpc_addr="https://rpc.mainnet.near.org")
         env.add_system_log(f"NEAR initialized: {user_id}")
     except Exception as e:
         env.add_reply(f"NEAR setup failed: {str(e)}")

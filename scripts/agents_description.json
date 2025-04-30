@@ -1,10 +1,22 @@
 [
-    {
-      "agent_id": "devbot.near/upload-agent/latest",
-      "description": "Collects .wav files from users, verifies them, and prepares for storage by passing to other agents."
-    },
-    {
-      "agent_id": "devbot.near/storage-agent/latest",
-      "description": "Stores .wav files on IPFS via Pinata, records content identifiers (CIDs) and file hashes on the NEAR blockchain."
-    }
-  ]
+  {
+    "agent_id": "devbot.near/upload-agent/latest",
+    "description": "Handles uploading .mp3 and .mp4 files, verifies them, and prepares for storage."
+  },
+  {
+    "agent_id": "devbot.near/storage-agent/latest",
+    "description": "Stores .mp3 and .mp4 files on IPFS via Pinata, records CIDs and hashes on NEAR mainnet."
+  },
+  {
+    "agent_id": "devbot.near/auth-agent/latest",
+    "description": "Creates NEAR wallets on testnet, verifies wallet connection, and checks token ownership on 1000fans.testnet."
+  },
+  {
+    "agent_id": "devbot.near/nft-agent/latest",
+    "description": "Mints and transfers NFTs on 1000fans.testnet for platform access."
+  },
+  {
+    "agent_id": "devbot.near/feature-extraction-agent/latest",
+    "description": "Extracts metadata from .mp3 and .mp4 files for DFS Manager."
+  }
+]

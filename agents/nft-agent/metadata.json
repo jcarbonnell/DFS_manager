@@ -1,9 +1,9 @@
 {
-  "name": "upload-agent",
-  "version": "0.0.19",
-  "description": "Verifies embedded test.mp3 and passes it to storage-agent after user confirmation.",
+  "name": "nft-agent",
+  "version": "0.0.2",
+  "description": "Mints and transfers NFTs on 1000fans.testnet for 1000fans platform access.",
   "category": "agent",
-  "tags": ["upload", "ipfs", "near", "mp3"],
+  "tags": ["nft", "near", "token", "access"],
   "details": {
     "agent": {
       "defaults": {
@@ -13,8 +13,9 @@
         "model_max_tokens": 16384
       },
       "env_vars": {
-        "CONTRACT_ID": "devbot.near",
-        "GROUP_ID": "theosis"
+        "NFT_CONTRACT_ID": "1000fans.testnet",
+        "GROUP_ID": "theosis",
+        "ADMIN_PRIVATE_KEY": ""
       }
     }
   },
