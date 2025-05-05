@@ -1,9 +1,9 @@
 {
   "name": "manager-agent",
-  "version": "0.0.7",
-  "description": "Interacts with users, verifies authorization, and routes tasks into the DFS Manager team of agents using vector stores.",
+  "version": "0.0.27",
+  "description": "Interacts with users, handles greetings, static commands (spotify, youtube, contact, list), and routes other tasks to LLM completion. Includes minimal logging for debugging.",
   "category": "agent",
-  "tags": ["manager", "routing", "near", "ipfs", "mp3", "auth"],
+  "tags": ["manager", "debug", "near"],
   "details": {
     "agent": {
       "defaults": {
@@ -15,7 +15,7 @@
       "env_vars": {
         "CONTRACT_ID": "devbot.near",
         "GROUP_ID": "theosis",
-        "VECTOR_STORE_ID": "vs_9a5a801af080432d8413dc91"
+        "VECTOR_STORE_ID": "vs_11cea753bef04e71bb3ea2ed"
       }
     }
   },

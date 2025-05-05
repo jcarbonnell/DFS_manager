@@ -128,9 +128,9 @@ Inspired by [A Secure File Sharing System Based on IPFS and Blockchain](https://
 
 Grow the team of AI Agents and the smart contract with more features: 
 - ~~1. create, deploy and test an upload-agent in charge for collecting file and pre-processing them before sending them to other agents~~.
-- 2. create, deploy and test a manager agent in charge for interacting with the user in human language and routing the tasks to the right agents of the team of agents. It will use vector stores for efficient agent routing based on the user request.
-- 3. create, deploy and test feature extraction agents based on standard library. 
-- 4. create, deploy and test feature extraction agents based on external libraries (mutagen, PIL, torch...) or any other external resource.
+- ~~2. create, deploy and test a manager agent in charge for interacting with the user in human language and routing the tasks to the right agents of the team of agents. It will use vector stores for efficient agent routing based on the user request~~.
+- 3. create, deploy and test feature extraction agents using on standard and external libraries (mutagen, PIL, torch...). 
+- 4. update smart contract with group access feature.
 
 ### Repository content:
 - **agents folder**: contains each individual agents' code generated using NEAR AI CLI. Each agent has its own sub-folder with the agents.py and metadata.json files.

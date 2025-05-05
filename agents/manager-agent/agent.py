@@ -1,105 +1,93 @@
 # a manager agent part of the DFS manager team of agents
 from nearai.agents.environment import Environment
-import json
 
-MODEL = "llama-v3p1-70b-instruct"
-VECTOR_STORE_ID = "vs_9a5a801af080432d8413dc91"
-
-def check_auth_status(env):
-    """Check if user is authorized via auth_status.json."""
-    try:
-        files = env.list_files_from_thread()
-        auth_file = next((f for f in files if f.filename == "auth_status.json"), None)
-        if auth_file:
-            auth_data = json.loads(env.read_file(auth_file.filename).decode())
-            env.add_system_log(f"Auth status: {auth_data}")
-            return auth_data.get("authorized", False)
-        return False
-    except Exception as e:
-        env.add_system_log(f"Error checking auth status: {str(e)}")
-        return False
-
-async def run(env: Environment):
+def run(env: Environment):
+    env.add_system_log("Manager-agent: Starting agent")
     env.env_vars["DEBUG"] = "true"
-    env.add_system_log("Manager-agent started")
 
-    messages = env.list_messages()
-    if not messages:
-        env.add_reply("Hello! I can help you create a wallet, connect your wallet, mint a token, transfer a token, upload files, or extract metadata. Say 'create wallet', 'connect wallet', 'mint token', 'transfer token <receiver_id> <token_id>', 'upload a file', or 'extract metadata <filename>'.")
-        env.request_user_input()
-        return
-
-    user_query = messages[-1]["content"].strip().lower()
-    env.add_system_log(f"User query: {user_query}")
-
-    # Validate file uploads
-    if "upload file" in user_query:
-        files = env.list_files_from_thread()
-        if not files:
-            env.add_reply("Please upload an .mp3 or .mp4 file to the thread first.")
-            env.request_user_input()
-            return
-
-        # Check total file size (50 MB = 50,000,000 bytes)
-        total_size = 0
-        for file in files:
-            if not file.filename.lower().endswith((".mp3", ".mp4")):
-                env.add_reply("Files must be .mp3 or .mp4.")
-                env.request_user_input()
-                return
-            try:
-                # Note: Requires NEAR AI's env.get_file_size API
-                file_size = env.get_file_size(file.filename)
-                total_size += file_size
-            except AttributeError:
-                env.add_system_log("env.get_file_size not available, skipping size check")
-                break  # Fallback if API is unsupported
-        if total_size > 50_000_000:
-            env.add_reply("Total file size must not exceed 50 MB.")
-            env.request_user_input()
-            return
-
-    # Query vector store
     try:
-        env.add_system_log(f"Querying vector store with ID: {VECTOR_STORE_ID}")
-        vector_results = await env.query_vector_store(VECTOR_STORE_ID, user_query)
-        env.add_system_log(f"Vector store results: {vector_results}")
-        if not vector_results:
-            env.add_reply("Sorry, I didn't understand your request. Try 'create wallet', 'connect wallet', 'mint token', 'transfer token <receiver_id> <token_id>', 'upload a file', or 'extract metadata <filename>'.")
+        # Fetch messages
+        env.add_system_log("Manager-agent: Fetching messages")
+        messages = env.list_messages()
+
+        # Handle no messages
+        if not messages:
+            env.add_system_log("Manager-agent: No messages, sending welcome reply")
+            env.add_reply(
+                "Hi! 👋 Welcome to 1000fans! 1000fans is a private content platform used by Theosis to provide its fans with exclusive content.\n\n"
+                "To access the artist's private music and videos, you must connect a crypto wallet. To connect your wallet, type 'connect wallet'.\n\n"
+                "If you do not have a wallet yet and want to create one, type 'create wallet'.\n\n"
+                "You can also access the artist's music on the usual media platforms by saying 'spotify' or 'youtube',\n\n"
+                "and you can contact Theosis directly by saying 'contact'."
+            )
             env.request_user_input()
             return
 
-        top_result = vector_results[0]["chunk_text"]
-        env.add_system_log(f"Top result: {top_result}")
-        agent_data = json.loads(top_result)
-        target_agent = agent_data["agent_id"]
-        env.add_system_log(f"Selected agent: {target_agent}")
-    except Exception as e:
-        env.add_system_log(f"Vector store query failed: {str(e)}")
-        env.add_reply(f"Error processing your request: {str(e)}. Please try again.")
-        env.request_user_input()
-        return
+        # Get user query
+        user_query = messages[-1]["content"].strip().lower()
+        env.add_system_log(f"Manager-agent: User query: {user_query}")
 
-    # Check authorization for non-auth/NFT tasks
-    if not any(agent in target_agent for agent in ["auth-agent", "nft-agent"]) and not check_auth_status(env):
-        env.add_system_log("User not authorized, routing to auth-agent")
-        target_agent = "devbot.near/auth-agent/latest"
-        query = "check access"
-    else:
-        query = (
-            "upload file" if "upload-agent" in target_agent else
-            "process file" if "storage-agent" in target_agent else
-            user_query if "feature-extraction-agent" in target_agent else
-            user_query
-        )
-        env.add_system_log(f"Prepared query for {target_agent}: {query}")
+        # Handle greetings explicitly
+        greetings = ["hi", "hello", "hey", "hola"]
+        if any(greeting in user_query for greeting in greetings):
+            env.add_system_log("Manager-agent: Handling greeting")
+            env.add_reply(
+                "Hi! 👋 Welcome to 1000fans! 1000fans is a private content platform used by Theosis to provide its fans with exclusive content.\n\n"
+                "You can access the artist's music on media platforms by saying 'spotify' or 'youtube', or contact the artist directly by saying 'contact'.\n\n"
+                "To access the artist's private music and videos, you must connect a crypto wallet. To connect your wallet, type 'connect wallet'.\n\n"
+                "If you do not have a wallet yet and want to create one, type 'create wallet'.\n\n"
+                "Type 'list' to see all available commands.\n\n"
+            )
+            env.request_user_input()
+            return
 
-    # Route to agent
-    try:
-        result = await env.run_agent(target_agent, query=query, thread_mode="FORK")
-        env.add_system_log(f"Agent {target_agent} invoked, thread ID: {result}")
-        env.add_reply(f"Your request has been sent to {target_agent.split('/')[-2]}. Check thread {result} for next steps.")
-    except Exception as e:
-        env.add_system_log(f"Agent invocation failed: {str(e)}")
-        env.add_reply(f"Failed to process your request: {str(e)}")
+        # Handle static commands
+        if "spotify" in user_query:
+            env.add_system_log("Manager-agent: Handling spotify request")
+            env.add_reply("Check out Theosis on Spotify: https://open.spotify.com/artist/1ljniIS7mEd0z1zOE6MEL0")
+            env.request_user_input()
+            return
+        if "youtube" in user_query:
+            env.add_system_log("Manager-agent: Handling youtube request")
+            env.add_reply("Watch Theosis on YouTube: https://www.youtube.com/@TheosisRecords")
+            env.request_user_input()
+            return
+        if "contact" in user_query:
+            env.add_system_log("Manager-agent: Handling contact request")
+            env.add_reply("Contact Theosis directly on WhatsApp +33617982358 or Twitter: @jcarbonnell")
+            env.request_user_input()
+            return
+        if "list" in user_query:
+            env.add_system_log("Manager-agent: Handling list request")
+            env.add_reply(
+                "Available commands:\n"
+                "- 'spotify': Access Theosis music on Spotify.\n"
+                "- 'youtube': Watch Theosis videos on YouTube.\n"
+                "- 'contact': Get info to contact Theosis.\n"
+                "- 'connect wallet': Connect your NEAR wallet to access exclusive content on 1000fans.\n"
+                "- 'create wallet': Create a NEAR wallet if you don't have one yet.\n"
+                "- 'mint token': Get your access token sent to your wallet.\n"
+                "- 'transfer token': Transfer or sell your limited fans token.\n"
+                "Type any command to proceed!"
+            )
+            env.request_user_input()
+            return
+
+        # Fallback to LLM completion for other inputs
+        env.add_system_log("Manager-agent: Processing with LLM completion")
+        prompt = {
+            "role": "system",
+            "content": (
+                "You are in charge for interacting with users in a friendly human language and route tasks to dedicated agents from the DFS manager team of s."
+            )
+        }
+        result = env.completion([prompt] + [{"role": "user", "content": user_query}])
+        env.add_reply(result)
         env.request_user_input()
+
+    except Exception as e:
+        env.add_system_log(f"Manager-agent: Unexpected error: {str(e)}")
+        env.add_reply(f"Error: {str(e)}")
+        env.request_user_input()
+
+run(env)
