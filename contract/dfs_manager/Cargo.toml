@@ -1,7 +1,7 @@
 [package]
 name = "dfs_manager"
 description = "cargo-near-new-project-description"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 repository = "https://github.com/jcarbonnell/DFS_manager"
 
@@ -15,14 +15,15 @@ passed_env = []
 container_build_command = ["cargo", "near", "build", "non-reproducible-wasm", "--locked"]
 
 [dependencies]
-near-sdk = "5.9.0"
+near-sdk = "5.11.0"
 borsh = "1.5"
 hex = "0.4"
 serde = { version = "1.0", features = ["derive"] }
-schemars = "0.8"
+schemars = "0.8.22"
 
 [dev-dependencies]
-near-sdk = { version = "5.9.0", features = ["unit-testing"] }
+near-sdk = { version = "5.11.0", features = ["unit-testing"] }
+near-parameters = "0.25.0"
 near-workspaces = { version = "0.16", features = ["unstable"] }
 tokio = { version = "1.12.0", features = ["full"] }
 serde_json = "1"
