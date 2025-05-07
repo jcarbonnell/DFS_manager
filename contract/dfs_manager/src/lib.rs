@@ -16,20 +16,19 @@ pub struct Contract {
     mock_promise_result: Option<bool>, // Test-only field to mock promise result
 }
 
-// Use a wrapper type for Transaction to handle JsonSchema for AccountId
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, JsonSchema)]
 #[serde(crate = "near_sdk::serde")]
 pub struct Transaction {
     group_id: String,
-    user_id: String, // Changed to String to satisfy JsonSchema
+    user_id: String,
     file_hash: String,
     ipfs_hash: String,
 }
 
-#[derive(BorshSerialize, BorshDeserialize)]
+#[derive(BorshSerialize, BorshDeserialize, Clone)]
 pub struct Group {
     owner: AccountId,
-    group_key: Option<String>, // Will be used in Phase 2
+    group_key: Option<String>, // Stores the symmetric group key
 }
 
 #[near_bindgen]
@@ -56,18 +55,47 @@ impl Contract {
     pub fn register_group(&mut self, group_id: String) {
         assert!(!self.groups.contains_key(&group_id), "Group already exists");
         let caller = env::predecessor_account_id();
-        // Only auth-agent or manager-agent can register a group
         assert!(
             caller == self.owner || caller.as_str().ends_with(".devbot.near"),
             "Only contract owner or devbot agents can register a group"
         );
         let group = Group {
             owner: caller.clone(),
-            group_key: None, // will be set in store_group_key
+            group_key: None,
         };
         self.groups.insert(group_id.clone(), group);
         self.group_members.insert(group_id.clone(), Vec::new());
         log!("Group {} registered by {}", group_id, caller);
+    }
+
+    // Step 3: Record a transaction
+    #[payable]
+    pub fn record_transaction(
+        &mut self,
+        group_id: String,
+        user_id: AccountId,
+        file_hash: String,
+        ipfs_hash: String,
+    ) -> String {
+        assert!(self.groups.contains_key(&group_id), "Group not found");
+        assert!(self.is_authorized(group_id.clone(), user_id.clone()), "User not authorized");
+        let caller = env::predecessor_account_id();
+        assert!(
+            caller == self.owner || caller.as_str().ends_with(".devbot.near"),
+            "Only devbot agents can record transactions"
+        );
+        let trans_id = hex::encode(env::sha256(
+            &(group_id.clone() + &user_id.to_string() + &file_hash + &ipfs_hash + &env::block_timestamp().to_string()).into_bytes()
+        ));
+        let tx = Transaction {
+            group_id,
+            user_id: user_id.to_string(),
+            file_hash,
+            ipfs_hash,
+        };
+        self.transactions.insert(trans_id.clone(), tx);
+        log!("Transaction recorded: {}", trans_id);
+        trans_id
     }
 
     // Step 6: Add a member to a group
@@ -75,12 +103,11 @@ impl Contract {
     pub fn add_group_member(&mut self, group_id: String, user_id: AccountId) {
         let group = self.groups.get(&group_id).expect("Group not found");
         let caller = env::predecessor_account_id();
-        // Only group owner, auth-agent, or nft-agent can add members
         assert!(
             caller == group.owner || caller == self.owner || caller.as_str().ends_with(".devbot.near"),
             "Only group owner, auth-agent, or devbot agents can add members"
         );
-        // Check NFT ownership via cross-contract call to 1000fans.testnet
+        // Step 4: Check token ownership via cross-contract call to 1000fans.testnet
         ext_nft::ext("1000fans.testnet".parse().unwrap())
             .with_static_gas(Gas::from_tgas(10))
             .owns_token(user_id.clone())
@@ -129,12 +156,11 @@ impl Contract {
         }
     }
 
-    // Step 10: Revoke a group member
+    // Step 6: Revoke a group member
     #[payable]
     pub fn revoke_group_member(&mut self, group_id: String, user_id: AccountId) {
         let group = self.groups.get(&group_id).expect("Group not found");
         let caller = env::predecessor_account_id();
-        // Only group owner, auth-agent, or nft-agent can revoke members
         assert!(
             caller == group.owner || caller == self.owner || caller.as_str().ends_with(".devbot.near"),
             "Only group owner, auth-agent, or devbot agents can revoke members"
@@ -156,46 +182,54 @@ impl Contract {
         members.contains(&user_id)
     }
 
-    // Step 3: Record a transaction
+    // Step 6: Store the group key (called by storage-agent)
     #[payable]
-    pub fn record_transaction(
-        &mut self,
-        group_id: String,
-        user_id: AccountId,
-        file_hash: String,
-        ipfs_hash: String,
-    ) -> String {
-        assert!(self.groups.contains_key(&group_id), "Group not found");
-        assert!(self.is_authorized(group_id.clone(), user_id.clone()), "User not authorized");
+    pub fn store_group_key(&mut self, group_id: String, key: String) {
+        let group = self.groups.get(&group_id).expect("Group not found");
         let caller = env::predecessor_account_id();
-        // Allow any .devbot.near agent to record transactions
         assert!(
-            caller == self.owner || caller.as_str().ends_with(".devbot.near"),
-            "Only devbot agents can record transactions"
+            caller == group.owner || caller == self.owner || caller.as_str().ends_with(".devbot.near"),
+            "Only group owner or devbot agents can store group key"
         );
-        let trans_id = hex::encode(env::sha256(
-            &(group_id.clone() + &user_id.to_string() + &file_hash + &ipfs_hash + &env::block_timestamp().to_string()).into_bytes()
-        ));
-        let tx = Transaction {
-            group_id,
-            user_id: user_id.to_string(),
-            file_hash,
-            ipfs_hash,
-        };
-        self.transactions.insert(trans_id.clone(), tx);
-        log!("Transaction recorded: {}", trans_id);
-        trans_id
+        assert!(!key.is_empty(), "Group key cannot be empty");
+        let mut group = group.clone();
+        group.group_key = Some(key.clone());
+        self.groups.insert(group_id.clone(), group);
+        log!("Group key stored for group {}", group_id);
     }
 
-    // Retrieve a transaction
+    // Step 6: Retrieve the group key (called by storage-agent or auth-agent)
+    pub fn get_group_key(&self, group_id: String, user_id: AccountId) -> String {
+        let group = self.groups.get(&group_id).expect("Group not found");
+        assert!(self.is_authorized(group_id.clone(), user_id.clone()), "User not authorized");
+        let caller = env::predecessor_account_id();
+        assert!(
+            caller == group.owner || caller == self.owner || caller.as_str().ends_with(".devbot.near") || caller == user_id,
+            "Only group owner, devbot agents, or the user can retrieve the group key"
+        );
+        group.group_key.clone().expect("No group key set")
+    }
+
+    // Step 7: Retrieve a transaction
     pub fn get_transaction(&self, trans_id: String) -> Option<Transaction> {
         self.transactions.get(&trans_id).cloned()
     }
 
-    // Mock token ownership (to be replaced)
-    pub fn check_token_ownership(&self, account_id: AccountId) -> bool {
-        log!("Mock check: assuming {} owns a token", account_id);
-        true
+    // Step 15: Rotate the group key (called by storage-agent)
+    #[payable]
+    pub fn rotate_group_key(&mut self, group_id: String, new_key: String) {
+        let group = self.groups.get(&group_id).expect("Group not found");
+        let caller = env::predecessor_account_id();
+        assert!(
+            caller == group.owner || caller == self.owner || caller.as_str().ends_with(".devbot.near"),
+            "Only group owner or devbot agents can rotate group key"
+        );
+        assert!(!new_key.is_empty(), "New group key cannot be empty");
+        let mut group = group.clone();
+        group.group_key = Some(new_key.clone());
+        self.groups.insert(group_id.clone(), group);
+        log!("Group key rotated for group {}", group_id);
+        // Note: Updating IPFS files will be handled by update_group_files
     }
 }
 
@@ -291,7 +325,6 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
-
         // Add member
         testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
@@ -299,7 +332,6 @@ mod tests {
         testing_env!(context.build());
         contract.set_mock_promise_result(true);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
-
         // Revoke member with group owner (auth-agent.devbot.near)
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
@@ -314,7 +346,6 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
-
         // Add member
         testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
@@ -322,7 +353,6 @@ mod tests {
         testing_env!(context.build());
         contract.set_mock_promise_result(true);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
-
         assert!(contract.is_authorized("group1".to_string(), "user.near".parse().unwrap()));
         assert!(!contract.is_authorized("group1".to_string(), "other.near".parse().unwrap()));
     }
@@ -333,7 +363,6 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
-
         // Add member
         testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
@@ -341,7 +370,6 @@ mod tests {
         testing_env!(context.build());
         contract.set_mock_promise_result(true);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
-
         // Record transaction with auth-agent.devbot.near
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
@@ -358,12 +386,122 @@ mod tests {
     }
 
     #[test]
-    fn test_check_token_ownership() {
+    fn test_store_group_key() {
+        let context = setup_context("storage-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        let group = contract.groups.get(&"group1".to_string()).expect("Group not found");
+        assert_eq!(group.group_key, Some("symmetric_key_123".to_string()));
+        assert_eq!(get_logs().last().unwrap(), "Group key stored for group group1");
+    }
+
+    #[test]
+    #[should_panic(expected = "Only group owner or devbot agents can store group key")]
+    fn test_store_group_key_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap()); // Authorized account registers group
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        let context = setup_context("random.near".parse().unwrap()); // Unauthorized caller
+        testing_env!(context.build());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "Group key cannot be empty")]
+    fn test_store_group_key_empty() {
+        let context = setup_context("storage-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "".to_string());
+    }
+
+    #[test]
+    fn test_get_group_key() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        let contract = Contract::new();
-        let result = contract.check_token_ownership("user.near".parse().unwrap());
-        assert_eq!(result, true);
-        assert_eq!(get_logs(), vec!["Mock check: assuming user.near owns a token"]);
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("user.near".parse().unwrap());
+        testing_env!(context.build());
+        let key = contract.get_group_key("group1".to_string(), "user.near".parse().unwrap());
+        assert_eq!(key, "symmetric_key_123");
+    }
+
+    #[test]
+    #[should_panic(expected = "User not authorized")]
+    fn test_get_group_key_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        let context = setup_context("user.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.get_group_key("group1".to_string(), "user.near".parse().unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "Only group owner, devbot agents, or the user can retrieve the group key")]
+    fn test_get_group_key_wrong_caller() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("other.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.get_group_key("group1".to_string(), "user.near".parse().unwrap());
+    }
+
+    #[test]
+    fn test_rotate_group_key() {
+        let context = setup_context("storage-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        contract.rotate_group_key("group1".to_string(), "new_symmetric_key_456".to_string());
+        let group = contract.groups.get(&"group1".to_string()).expect("Group not found");
+        assert_eq!(group.group_key, Some("new_symmetric_key_456".to_string()));
+        assert_eq!(get_logs().last().unwrap(), "Group key rotated for group group1");
+    }
+
+    #[test]
+    #[should_panic(expected = "Only group owner or devbot agents can rotate group key")]
+    fn test_rotate_group_key_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap()); // Authorized account registers group
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        let context = setup_context("random.near".parse().unwrap()); // Unauthorized caller
+        testing_env!(context.build());
+        contract.rotate_group_key("group1".to_string(), "new_symmetric_key_456".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "New group key cannot be empty")]
+    fn test_rotate_group_key_empty() {
+        let context = setup_context("storage-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        contract.rotate_group_key("group1".to_string(), "".to_string());
     }
 }
