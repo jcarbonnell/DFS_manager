@@ -12,6 +12,7 @@ pub struct Contract {
     transactions: IterableMap<String, Transaction>,
     groups: LookupMap<String, Group>,
     group_members: LookupMap<String, Vec<AccountId>>,
+    file_metadata: LookupMap<String, String>, // Stores file metadata by trans_id
     #[cfg(test)]
     mock_promise_result: Option<bool>, // Test-only field to mock promise result
 }
@@ -40,6 +41,7 @@ impl Contract {
             transactions: IterableMap::new(b"t"),
             groups: LookupMap::new(b"g"),
             group_members: LookupMap::new(b"m"),
+            file_metadata: LookupMap::new(b"f"),
             #[cfg(test)]
             mock_promise_result: None,
         }
@@ -229,7 +231,74 @@ impl Contract {
         group.group_key = Some(new_key.clone());
         self.groups.insert(group_id.clone(), group);
         log!("Group key rotated for group {}", group_id);
-        // Note: Updating IPFS files will be handled by update_group_files
+    }
+
+    // Steps 7, 10: Retrieve all transactions for a group
+    pub fn get_transactions_for_group(&self, group_id: String) -> Vec<Transaction> {
+        assert!(self.groups.contains_key(&group_id), "Group not found");
+        let caller = env::predecessor_account_id();
+        assert!(
+            caller == self.owner || caller.as_str().ends_with(".devbot.near") || self.is_authorized(group_id.clone(), caller.clone()),
+            "Only group members, owner, or devbot agents can view transactions"
+        );
+        self.transactions
+            .iter()
+            .filter(|(_, tx)| tx.group_id == group_id)
+            .map(|(_, tx)| tx.clone())
+            .collect()
+    }
+
+    // Step 10: Update IPFS hashes after key rotation
+    #[payable]
+    pub fn update_group_files(&mut self, group_id: String, new_ipfs_hashes: Vec<String>) {
+        let group = self.groups.get(&group_id).expect("Group not found");
+        let caller = env::predecessor_account_id();
+        assert!(
+            caller == group.owner || caller == self.owner || caller.as_str().ends_with(".devbot.near"),
+            "Only group owner or devbot agents can update group files"
+        );
+        assert!(!new_ipfs_hashes.is_empty(), "New IPFS hashes cannot be empty");
+        let transactions: Vec<(String, Transaction)> = self.transactions
+            .iter()
+            .filter(|(_, tx)| tx.group_id == group_id)
+            .map(|(trans_id, tx)| (trans_id.clone(), tx.clone()))
+            .collect();
+        assert_eq!(
+            transactions.len(),
+            new_ipfs_hashes.len(),
+            "Number of new IPFS hashes must match number of transactions"
+        );
+        for ((trans_id, mut tx), new_ipfs_hash) in transactions.into_iter().zip(new_ipfs_hashes.into_iter()) {
+            tx.ipfs_hash = new_ipfs_hash;
+            self.transactions.insert(trans_id, tx);
+        }
+        log!("IPFS hashes updated for group {}", group_id);
+    }
+
+    // AI Enhancement: Store file metadata
+    #[payable]
+    pub fn store_file_metadata(&mut self, trans_id: String, metadata: String) {
+        assert!(self.transactions.contains_key(&trans_id), "Transaction not found");
+        let caller = env::predecessor_account_id();
+        assert!(
+            caller == self.owner || caller.as_str().ends_with(".devbot.near"),
+            "Only devbot agents can store file metadata"
+        );
+        assert!(!metadata.is_empty(), "Metadata cannot be empty");
+        self.file_metadata.insert(trans_id.clone(), metadata.clone());
+        log!("Metadata stored for transaction {}", trans_id);
+    }
+
+    // AI Enhancement: Retrieve file metadata
+    pub fn get_file_metadata(&self, trans_id: String) -> Option<String> {
+        assert!(self.transactions.contains_key(&trans_id), "Transaction not found");
+        let caller = env::predecessor_account_id();
+        let tx = self.transactions.get(&trans_id).expect("Transaction not found");
+        assert!(
+            caller == self.owner || caller.as_str().ends_with(".devbot.near") || self.is_authorized(tx.group_id.clone(), caller.clone()),
+            "Only group members, owner, or devbot agents can view metadata"
+        );
+        self.file_metadata.get(&trans_id).cloned()
     }
 }
 
@@ -503,5 +572,228 @@ mod tests {
         contract.register_group("group1".to_string());
         contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
         contract.rotate_group_key("group1".to_string(), "".to_string());
+    }
+
+    #[test]
+    fn test_get_transactions_for_group() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let _trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        let context = setup_context("user.near".parse().unwrap());
+        testing_env!(context.build());
+        let transactions = contract.get_transactions_for_group("group1".to_string());
+        assert_eq!(transactions.len(), 1);
+        assert_eq!(transactions[0].ipfs_hash, "QmTest");
+    }
+
+    #[test]
+    #[should_panic(expected = "Only group members, owner, or devbot agents can view transactions")]
+    fn test_get_transactions_for_group_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        let context = setup_context("random.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.get_transactions_for_group("group1".to_string());
+    }
+
+    #[test]
+    fn test_update_group_files() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        contract.update_group_files("group1".to_string(), vec!["QmNewHash".to_string()]);
+        let tx = contract.get_transaction(trans_id).unwrap();
+        assert_eq!(tx.ipfs_hash, "QmNewHash");
+        assert_eq!(get_logs().last().unwrap(), "IPFS hashes updated for group group1");
+    }
+
+    #[test]
+    #[should_panic(expected = "Number of new IPFS hashes must match number of transactions")]
+    fn test_update_group_files_mismatch() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        contract.update_group_files("group1".to_string(), vec!["QmNewHash1".to_string(), "QmNewHash2".to_string()]);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only group owner or devbot agents can update group files")]
+    fn test_update_group_files_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        let context = setup_context("random.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.update_group_files("group1".to_string(), vec!["QmNewHash".to_string()]);
+    }
+
+    #[test]
+    fn test_store_file_metadata() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        contract.store_file_metadata(trans_id.clone(), "file_size:1MB".to_string());
+        let metadata = contract.get_file_metadata(trans_id.clone()).unwrap();
+        assert_eq!(metadata, "file_size:1MB");
+        assert_eq!(get_logs().last().unwrap(), &format!("Metadata stored for transaction {}", trans_id));
+    }
+
+    #[test]
+    #[should_panic(expected = "Only devbot agents can store file metadata")]
+    fn test_store_file_metadata_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        let context = setup_context("random.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.store_file_metadata(trans_id, "file_size:1MB".to_string());
+    }
+
+    #[test]
+    #[should_panic(expected = "Metadata cannot be empty")]
+    fn test_store_file_metadata_empty() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        contract.store_file_metadata(trans_id, "".to_string());
+    }
+
+    #[test]
+    fn test_get_file_metadata() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        contract.store_file_metadata(trans_id.clone(), "file_size:1MB".to_string());
+        let context = setup_context("user.near".parse().unwrap());
+        testing_env!(context.build());
+        let metadata = contract.get_file_metadata(trans_id).unwrap();
+        assert_eq!(metadata, "file_size:1MB");
+    }
+
+    #[test]
+    #[should_panic(expected = "Only group members, owner, or devbot agents can view metadata")]
+    fn test_get_file_metadata_unauthorized() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(true);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let trans_id = contract.record_transaction(
+            "group1".to_string(),
+            "user.near".parse().unwrap(),
+            "abc123".to_string(),
+            "QmTest".to_string(),
+        );
+        contract.store_file_metadata(trans_id.clone(), "file_size:1MB".to_string());
+        let context = setup_context("random.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.get_file_metadata(trans_id);
     }
 }
