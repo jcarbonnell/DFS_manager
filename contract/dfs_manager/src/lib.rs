@@ -4,9 +4,12 @@ use near_sdk::{near_bindgen, env, log, PanicOnDefault, AccountId, PromiseResult,
 use near_sdk::store::{IterableMap, LookupMap};
 use near_sdk::serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use near_sdk::serde_json;
+use near_sdk::json_types::U128;
+use near_contract_standards::non_fungible_token::{Token, TokenId};
 
 #[near_bindgen]
-#[derive(PanicOnDefault, BorshDeserialize, BorshSerialize)]
+#[derive(PanicOnDefault)]
 pub struct Contract {
     owner: AccountId,
     transactions: IterableMap<String, Transaction>,
@@ -14,7 +17,45 @@ pub struct Contract {
     group_members: LookupMap<String, Vec<AccountId>>,
     file_metadata: LookupMap<String, String>, // Stores file metadata by trans_id
     #[cfg(test)]
-    mock_promise_result: Option<bool>, // Test-only field to mock promise result
+    mock_promise_result: Option<Vec<Token>>, // Test-only field to mock promise result
+}
+
+// Manually implement BorshSerialize and BorshDeserialize to exclude mock_promise_result
+impl BorshSerialize for Contract {
+    fn serialize<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        BorshSerialize::serialize(&self.owner, writer)?;
+        BorshSerialize::serialize(&self.transactions, writer)?;
+        BorshSerialize::serialize(&self.groups, writer)?;
+        BorshSerialize::serialize(&self.group_members, writer)?;
+        BorshSerialize::serialize(&self.file_metadata, writer)?;
+        Ok(())
+    }
+}
+
+impl BorshDeserialize for Contract {
+    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
+        let owner = BorshDeserialize::deserialize(buf)?;
+        let transactions = BorshDeserialize::deserialize(buf)?;
+        let groups = BorshDeserialize::deserialize(buf)?;
+        let group_members = BorshDeserialize::deserialize(buf)?;
+        let file_metadata = BorshDeserialize::deserialize(buf)?;
+        Ok(Self {
+            owner,
+            transactions,
+            groups,
+            group_members,
+            file_metadata,
+            #[cfg(test)]
+            mock_promise_result: None,
+        })
+    }
+
+    fn deserialize_reader<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)?;
+        let mut buf = buf.as_slice();
+        Self::deserialize(&mut buf)
+    }
 }
 
 #[derive(BorshSerialize, BorshDeserialize, Serialize, Deserialize, Clone, JsonSchema)]
@@ -48,7 +89,7 @@ impl Contract {
     }
 
     #[cfg(test)]
-    pub fn set_mock_promise_result(&mut self, result: bool) {
+    pub fn set_mock_promise_result(&mut self, result: Vec<Token>) {
         self.mock_promise_result = Some(result);
     }
 
@@ -112,7 +153,7 @@ impl Contract {
         // Step 4: Check token ownership via cross-contract call to 1000fans.testnet
         ext_nft::ext("1000fans.testnet".parse().unwrap())
             .with_static_gas(Gas::from_tgas(10))
-            .owns_token(user_id.clone())
+            .nft_tokens_for_owner(user_id.clone(), None, Some(1))
             .then(
                 Self::ext(env::current_account_id())
                     .with_static_gas(Gas::from_tgas(10))
@@ -124,8 +165,14 @@ impl Contract {
     pub fn add_group_member_callback(&mut self, group_id: String, user_id: AccountId) {
         #[cfg(test)]
         {
-            if let Some(owns_token) = self.mock_promise_result {
-                assert!(owns_token, "User does not own a 1000fans token");
+            if let Some(tokens) = self.mock_promise_result.clone() {
+                assert!(!tokens.is_empty(), "User does not own a 1000fans token");
+                let token = &tokens[0];
+                let metadata = token.metadata.as_ref().expect("Token metadata missing");
+                let extra = metadata.extra.as_ref().expect("Token extra field missing");
+                let extra_json: serde_json::Value = serde_json::from_str(extra).expect("Invalid extra JSON");
+                let token_group_id = extra_json["group_id"].as_str().expect("group_id missing in token metadata");
+                assert_eq!(token_group_id, group_id, "Token group_id does not match group");
                 let members = self.group_members.get(&group_id).expect("Group not found");
                 let mut members = members.to_vec();
                 if !members.contains(&user_id) {
@@ -138,12 +185,18 @@ impl Contract {
                 return;
             }
         }
-
+    
         assert_eq!(env::promise_results_count(), 1, "Expected one promise result");
         match env::promise_result(0) {
             PromiseResult::Successful(value) => {
-                let owns_token: bool = near_sdk::serde_json::from_slice(&value).expect("Invalid response");
-                assert!(owns_token, "User does not own a 1000fans token");
+                let tokens: Vec<Token> = serde_json::from_slice(&value).expect("Invalid response");
+                assert!(!tokens.is_empty(), "User does not own a 1000fans token");
+                let token = &tokens[0];
+                let metadata = token.metadata.as_ref().expect("Token metadata missing");
+                let extra = metadata.extra.as_ref().expect("Token extra field missing");
+                let extra_json: serde_json::Value = serde_json::from_str(extra).expect("Invalid extra JSON");
+                let token_group_id = extra_json["group_id"].as_str().expect("group_id missing in token metadata");
+                assert_eq!(token_group_id, group_id, "Token group_id does not match group");
                 let members = self.group_members.get(&group_id).expect("Group not found");
                 let mut members = members.to_vec();
                 if !members.contains(&user_id) {
@@ -306,6 +359,7 @@ impl Contract {
 #[near_sdk::ext_contract(ext_nft)]
 pub trait ExtNft {
     fn owns_token(&self, account_id: AccountId) -> bool;
+    fn nft_tokens_for_owner(&self, account_id: AccountId, from_index: Option<U128>, limit: Option<u64>) -> Vec<Token>;
 }
 
 #[cfg(test)]
@@ -313,6 +367,8 @@ mod tests {
     use super::*;
     use near_sdk::test_utils::{VMContextBuilder, get_logs};
     use near_sdk::{testing_env, NearToken};
+    use near_contract_standards::non_fungible_token::metadata::TokenMetadata;
+    use serde_json::json;
 
     fn setup_context(predecessor: AccountId) -> VMContextBuilder {
         let mut context = VMContextBuilder::new();
@@ -322,6 +378,28 @@ mod tests {
             .account_balance(NearToken::from_yoctonear(100_000_000_000_000_000_000_000_000))
             .attached_deposit(NearToken::from_yoctonear(1_000_000_000_000_000_000_000_000));
         context
+    }
+
+    fn create_mock_token(user_id: AccountId, group_id: &str) -> Token {
+        Token {
+            token_id: "fan000".to_string(),
+            owner_id: user_id,
+            metadata: Some(TokenMetadata {
+                title: Some("1000fans Access Token".into()),
+                description: Some("Grants access".into()),
+                media: None,
+                media_hash: None,
+                copies: Some(1u64),
+                issued_at: Some("0".into()),
+                expires_at: None,
+                starts_at: None,
+                updated_at: None,
+                extra: Some(serde_json::to_string(&json!({ "group_id": group_id })).unwrap()),
+                reference: None,
+                reference_hash: None,
+            }),
+            approved_account_ids: None,
+        }
     }
 
     #[test]
@@ -337,12 +415,9 @@ mod tests {
     #[test]
     #[should_panic(expected = "Only contract owner or devbot agents can register a group")]
     fn test_register_group_unauthorized() {
-        // Initialize contract with devbot.near as owner
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
         let mut contract = Contract::new();
-
-        // Try to register group with random.near
         let context = setup_context("random.near".parse().unwrap());
         testing_env!(context.build());
         contract.register_group("group1".to_string());
@@ -362,7 +437,7 @@ mod tests {
         // Simulate successful promise result
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
 
         assert!(contract.is_authorized("group1".to_string(), "user.near".parse().unwrap()));
@@ -381,10 +456,29 @@ mod tests {
         testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
 
-        // Simulate failed promise result
+        // Simulate empty token list
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(false);
+        contract.set_mock_promise_result(vec![]);
+        contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+    }
+
+    #[test]
+    #[should_panic(expected = "Token group_id does not match group")]
+    fn test_add_group_member_wrong_group_id() {
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        let mut contract = Contract::new();
+        contract.register_group("group1".to_string());
+
+        // Trigger cross-contract call
+        testing_env!(context.build());
+        contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
+
+        // Simulate token with wrong group_id
+        let context = setup_context("devbot.near".parse().unwrap());
+        testing_env!(context.build());
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group2")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
     }
 
@@ -399,9 +493,9 @@ mod tests {
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
-        // Revoke member with group owner (auth-agent.devbot.near)
+        // Revoke member
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         contract.revoke_group_member("group1".to_string(), "user.near".parse().unwrap());
@@ -420,7 +514,7 @@ mod tests {
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
         assert!(contract.is_authorized("group1".to_string(), "user.near".parse().unwrap()));
         assert!(!contract.is_authorized("group1".to_string(), "other.near".parse().unwrap()));
@@ -437,9 +531,9 @@ mod tests {
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
-        // Record transaction with auth-agent.devbot.near
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -469,11 +563,11 @@ mod tests {
     #[test]
     #[should_panic(expected = "Only group owner or devbot agents can store group key")]
     fn test_store_group_key_unauthorized() {
-        let context = setup_context("auth-agent.devbot.near".parse().unwrap()); // Authorized account registers group
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
-        let context = setup_context("random.near".parse().unwrap()); // Unauthorized caller
+        let context = setup_context("random.near".parse().unwrap());
         testing_env!(context.build());
         contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
     }
@@ -495,11 +589,14 @@ mod tests {
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
         contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Get key
         let context = setup_context("user.near".parse().unwrap());
         testing_env!(context.build());
         let key = contract.get_group_key("group1".to_string(), "user.near".parse().unwrap());
@@ -527,11 +624,14 @@ mod tests {
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
         contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Wrong caller
         let context = setup_context("other.near".parse().unwrap());
         testing_env!(context.build());
         contract.get_group_key("group1".to_string(), "user.near".parse().unwrap());
@@ -553,12 +653,12 @@ mod tests {
     #[test]
     #[should_panic(expected = "Only group owner or devbot agents can rotate group key")]
     fn test_rotate_group_key_unauthorized() {
-        let context = setup_context("auth-agent.devbot.near".parse().unwrap()); // Authorized account registers group
+        let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
         contract.store_group_key("group1".to_string(), "symmetric_key_123".to_string());
-        let context = setup_context("random.near".parse().unwrap()); // Unauthorized caller
+        let context = setup_context("random.near".parse().unwrap());
         testing_env!(context.build());
         contract.rotate_group_key("group1".to_string(), "new_symmetric_key_456".to_string());
     }
@@ -580,11 +680,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let _trans_id = contract.record_transaction(
@@ -593,6 +696,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Get transactions
         let context = setup_context("user.near".parse().unwrap());
         testing_env!(context.build());
         let transactions = contract.get_transactions_for_group("group1".to_string());
@@ -618,11 +722,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -631,6 +738,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Update files
         contract.update_group_files("group1".to_string(), vec!["QmNewHash".to_string()]);
         let tx = contract.get_transaction(trans_id).unwrap();
         assert_eq!(tx.ipfs_hash, "QmNewHash");
@@ -644,11 +752,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         contract.record_transaction(
@@ -657,6 +768,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Update with mismatch
         contract.update_group_files("group1".to_string(), vec!["QmNewHash1".to_string(), "QmNewHash2".to_string()]);
     }
 
@@ -678,11 +790,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -691,6 +806,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Store metadata
         contract.store_file_metadata(trans_id.clone(), "file_size:1MB".to_string());
         let metadata = contract.get_file_metadata(trans_id.clone()).unwrap();
         assert_eq!(metadata, "file_size:1MB");
@@ -704,11 +820,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -717,6 +836,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Unauthorized caller
         let context = setup_context("random.near".parse().unwrap());
         testing_env!(context.build());
         contract.store_file_metadata(trans_id, "file_size:1MB".to_string());
@@ -729,11 +849,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -742,6 +865,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Empty metadata
         contract.store_file_metadata(trans_id, "".to_string());
     }
 
@@ -751,11 +875,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -764,6 +891,7 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Store and get metadata
         contract.store_file_metadata(trans_id.clone(), "file_size:1MB".to_string());
         let context = setup_context("user.near".parse().unwrap());
         testing_env!(context.build());
@@ -778,11 +906,14 @@ mod tests {
         testing_env!(context.build());
         let mut contract = Contract::new();
         contract.register_group("group1".to_string());
+        // Add member
+        testing_env!(context.build());
         contract.add_group_member("group1".to_string(), "user.near".parse().unwrap());
         let context = setup_context("devbot.near".parse().unwrap());
         testing_env!(context.build());
-        contract.set_mock_promise_result(true);
+        contract.set_mock_promise_result(vec![create_mock_token("user.near".parse().unwrap(), "group1")]);
         contract.add_group_member_callback("group1".to_string(), "user.near".parse().unwrap());
+        // Record transaction
         let context = setup_context("auth-agent.devbot.near".parse().unwrap());
         testing_env!(context.build());
         let trans_id = contract.record_transaction(
@@ -791,7 +922,9 @@ mod tests {
             "abc123".to_string(),
             "QmTest".to_string(),
         );
+        // Store metadata
         contract.store_file_metadata(trans_id.clone(), "file_size:1MB".to_string());
+        // Unauthorized caller
         let context = setup_context("random.near".parse().unwrap());
         testing_env!(context.build());
         contract.get_file_metadata(trans_id);
